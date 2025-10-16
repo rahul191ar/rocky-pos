@@ -1,5 +1,11 @@
 import { IsNotEmpty, IsOptional, IsString, IsNumber, IsBoolean, Min, IsUUID } from 'class-validator';
 
+export class BarcodeParamDto {
+  @IsNotEmpty()
+  @IsString()
+  code: string;
+}
+
 export class CreateProductDto {
   @IsNotEmpty()
   @IsString()

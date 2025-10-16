@@ -224,6 +224,166 @@ describe('ProductsService', () => {
     });
   });
 
+  describe('findByBarcode', () => {
+    it('should return product by barcode', async () => {
+      const category = await prisma.category.create({
+        data: { name: 'Electronics' },
+      });
+
+      const createProductDto = {
+        name: 'Test Product',
+        sku: 'TEST-001',
+        barcode: '1234567890123',
+        price: 100.00,
+        categoryId: category.id,
+      };
+
+      await service.create(createProductDto);
+
+      const result = await service.findByBarcode('1234567890123');
+
+      expect(result).toBeDefined();
+      expect(result.barcode).toBe('1234567890123');
+      expect(result.name).toBe('Test Product');
+      expect(result.sku).toBe('TEST-001');
+      expect(result.price).toBe(100.00);
+      expect(result.isActive).toBe(true);
+    });
+
+    it('should return product with category and supplier relations', async () => {
+      const category = await prisma.category.create({
+        data: { name: 'Electronics', description: 'Electronic items' },
+      });
+
+      const supplier = await prisma.supplier.create({
+        data: { name: 'Apple Inc.', contactPerson: 'John Doe' },
+      });
+
+      const createProductDto = {
+        name: 'iPhone 14',
+        sku: 'IPH14-128',
+        barcode: '1234567890123',
+        price: 999.99,
+        categoryId: category.id,
+        supplierId: supplier.id,
+      };
+
+      await service.create(createProductDto);
+
+      const result = await service.findByBarcode('1234567890123');
+
+      expect(result).toBeDefined();
+      expect(result.category).toBeDefined();
+      expect(result.category?.name).toBe('Electronics');
+      expect(result.supplier).toBeDefined();
+      expect(result.supplier?.name).toBe('Apple Inc.');
+    });
+
+    it('should throw NotFoundException if product with barcode not found', async () => {
+      await expect(service.findByBarcode('NON-EXISTENT-BARCODE')).rejects.toThrow(
+        'Product with barcode NON-EXISTENT-BARCODE not found',
+      );
+    });
+
+    it('should throw NotFoundException if product with barcode is inactive', async () => {
+      const category = await prisma.category.create({
+        data: { name: 'Electronics' },
+      });
+
+      // Create inactive product
+      await prisma.product.create({
+        data: {
+          name: 'Inactive Product',
+          sku: 'INACTIVE-001',
+          barcode: '9876543210987',
+          price: 50.00,
+          categoryId: category.id,
+          isActive: false,
+        },
+      });
+
+      await expect(service.findByBarcode('9876543210987')).rejects.toThrow(
+        'Product with barcode 9876543210987 not found',
+      );
+    });
+
+    it('should return product even if barcode is null for other products', async () => {
+      const category = await prisma.category.create({
+        data: { name: 'Electronics' },
+      });
+
+      // Create product without barcode
+      await service.create({
+        name: 'Product Without Barcode',
+        sku: 'NO-BARCODE-001',
+        price: 100.00,
+        categoryId: category.id,
+      });
+
+      // Create product with barcode
+      await service.create({
+        name: 'Product With Barcode',
+        sku: 'WITH-BARCODE-001',
+        barcode: '1111111111111',
+        price: 200.00,
+        categoryId: category.id,
+      });
+
+      const result = await service.findByBarcode('1111111111111');
+
+      expect(result).toBeDefined();
+      expect(result.barcode).toBe('1111111111111');
+      expect(result.name).toBe('Product With Barcode');
+    });
+
+    it('should handle special characters in barcode', async () => {
+      const category = await prisma.category.create({
+        data: { name: 'Electronics' },
+      });
+
+      const createProductDto = {
+        name: 'Special Barcode Product',
+        sku: 'SPECIAL-001',
+        barcode: 'ABC-123-XYZ',
+        price: 150.00,
+        categoryId: category.id,
+      };
+
+      await service.create(createProductDto);
+
+      const result = await service.findByBarcode('ABC-123-XYZ');
+
+      expect(result).toBeDefined();
+      expect(result.barcode).toBe('ABC-123-XYZ');
+      expect(result.name).toBe('Special Barcode Product');
+    });
+
+    it('should be case sensitive for barcode search', async () => {
+      const category = await prisma.category.create({
+        data: { name: 'Electronics' },
+      });
+
+      const createProductDto = {
+        name: 'Case Sensitive Product',
+        sku: 'CASE-001',
+        barcode: 'AbC123XyZ',
+        price: 100.00,
+        categoryId: category.id,
+      };
+
+      await service.create(createProductDto);
+
+      // Should find with exact case
+      const result1 = await service.findByBarcode('AbC123XyZ');
+      expect(result1).toBeDefined();
+
+      // Should not find with different case
+      await expect(service.findByBarcode('abc123xyz')).rejects.toThrow(
+        'Product with barcode abc123xyz not found',
+      );
+    });
+  });
+
   describe('update', () => {
     it('should successfully update product', async () => {
       const category = await prisma.category.create({

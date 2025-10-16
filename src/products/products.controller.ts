@@ -9,9 +9,11 @@ import {
   UseGuards,
   ParseUUIDPipe,
   Query,
+  ValidationPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
-import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
+import { CreateProductDto, UpdateProductDto, BarcodeParamDto } from './dto/product.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('products')
@@ -40,6 +42,14 @@ export class ProductsController {
       return this.productsService.findBySku(sku);
     }
     return this.productsService.findAll();
+  }
+
+  @Get('barcode/:code')
+  findByBarcode(@Param('code', new ValidationPipe({ transform: true })) code: string) {
+    if (!code || code.trim() === '') {
+      throw new BadRequestException('Barcode cannot be empty');
+    }
+    return this.productsService.findByBarcode(code);
   }
 
   @Get(':id')

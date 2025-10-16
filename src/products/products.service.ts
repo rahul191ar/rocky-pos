@@ -110,6 +110,29 @@ export class ProductsService {
     return product ? this.mapToResponseDto(product) : null;
   }
 
+  async findByBarcode(barcode: string): Promise<ProductResponseDto> {
+    const product = await this.prisma.product.findFirst({
+      where: { 
+        barcode,
+        isActive: true 
+      },
+      include: {
+        category: {
+          select: { id: true, name: true },
+        },
+        supplier: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Product with barcode ${barcode} not found`);
+    }
+
+    return this.mapToResponseDto(product);
+  }
+
   async update(id: string, updateProductDto: UpdateProductDto): Promise<ProductResponseDto> {
     const product = await this.prisma.product.findUnique({
       where: { id },
