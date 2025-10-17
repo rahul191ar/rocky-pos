@@ -10,6 +10,11 @@ export class SalesService {
   async create(createSaleDto: CreateSaleDto, userId: string): Promise<SaleResponseDto> {
     const { customerId, items, discount = 0, taxAmount = 0, paymentMethod, notes } = createSaleDto;
 
+    // Validate items array is not empty
+    if (!items || items.length === 0) {
+      throw new BadRequestException('Sale must have at least one item');
+    }
+
     // Validate customer if provided
     if (customerId) {
       const customer = await this.prisma.customer.findUnique({
@@ -310,6 +315,183 @@ export class SalesService {
       paymentMethodStats,
       sales,
     };
+  }
+
+  async getSalesByCustomer(customerId: string): Promise<SaleResponseDto[]> {
+    const sales = await this.prisma.sale.findMany({
+      where: { customerId },
+      include: {
+        customer: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        user: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        items: {
+          include: {
+            product: {
+              select: { id: true, name: true, sku: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return sales.map(sale => this.mapToResponseDto(sale));
+  }
+
+  async getSalesByDateRange(startDate: Date, endDate: Date): Promise<SaleResponseDto[]> {
+    if (startDate > endDate) {
+      throw new BadRequestException('Start date must be before end date');
+    }
+
+    const sales = await this.prisma.sale.findMany({
+      where: {
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      include: {
+        customer: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        user: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        items: {
+          include: {
+            product: {
+              select: { id: true, name: true, sku: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return sales.map(sale => this.mapToResponseDto(sale));
+  }
+
+  async updateSaleStatus(id: string, status: string): Promise<SaleResponseDto> {
+    // Validate status
+    if (!Object.values(SaleStatus).includes(status as SaleStatus)) {
+      throw new BadRequestException(`Invalid status: ${status}`);
+    }
+
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+    });
+
+    if (!sale) {
+      throw new NotFoundException(`Sale with ID ${id} not found`);
+    }
+
+    const updatedSale = await this.prisma.sale.update({
+      where: { id },
+      data: { status: status as SaleStatus },
+      include: {
+        customer: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        user: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        items: {
+          include: {
+            product: {
+              select: { id: true, name: true, sku: true },
+            },
+          },
+        },
+      },
+    });
+
+    return this.mapToResponseDto(updatedSale);
+  }
+
+  async getTotalSalesAmount(startDate: Date, endDate: Date): Promise<number> {
+    const sales = await this.prisma.sale.findMany({
+      where: {
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+        status: SaleStatus.COMPLETED,
+      },
+      select: {
+        finalAmount: true,
+      },
+    });
+
+    return sales.reduce((sum, sale) => sum + sale.finalAmount, 0);
+  }
+
+  async getSalesCount(startDate: Date, endDate: Date): Promise<number> {
+    return await this.prisma.sale.count({
+      where: {
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+        status: SaleStatus.COMPLETED,
+      },
+    });
+  }
+
+  async remove(id: string): Promise<SaleResponseDto> {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id },
+      include: {
+        items: true,
+      },
+    });
+
+    if (!sale) {
+      throw new NotFoundException(`Sale with ID ${id} not found`);
+    }
+
+    // Use transaction to delete sale and restore product quantities
+    const result = await this.prisma.$transaction(async (prisma) => {
+      // Restore product quantities if sale was completed
+      if (sale.status === SaleStatus.COMPLETED) {
+        for (const item of sale.items) {
+          await prisma.product.update({
+            where: { id: item.productId },
+            data: {
+              quantity: {
+                increment: item.quantity,
+              },
+            },
+          });
+        }
+      }
+
+      // Delete the sale (items will be cascade deleted)
+      const deletedSale = await prisma.sale.delete({
+        where: { id },
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          user: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true },
+              },
+            },
+          },
+        },
+      });
+
+      return deletedSale;
+    });
+
+    return this.mapToResponseDto(result);
   }
 
   private mapToResponseDto(sale: any): SaleResponseDto {

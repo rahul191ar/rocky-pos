@@ -6,19 +6,27 @@ const TEST_DB_NAME = 'test_rocky_pos';
 
 export class TestDatabase {
   private static prisma: PrismaClient | null = null;
+  private static isSetup = false;
 
   static async setup(): Promise<void> {
+    if (this.isSetup) {
+      return;
+    }
+
     // Create test database
     await this.createTestDatabase();
 
     // Create Prisma client with test database URL
     const testDbUrl = `postgresql://postgres:postgres@localhost:5432/${TEST_DB_NAME}?schema=public`;
+    process.env.DATABASE_URL = testDbUrl;
+
     this.prisma = new PrismaClient({
       datasources: {
         db: {
           url: testDbUrl,
         },
       },
+      log: ['error'], // Only log errors during tests
     });
 
     // Connect to database
@@ -26,6 +34,8 @@ export class TestDatabase {
 
     // Run migrations
     await this.runMigrations();
+
+    this.isSetup = true;
   }
 
   static async teardown(): Promise<void> {
@@ -37,6 +47,8 @@ export class TestDatabase {
 
     // Drop test database
     await this.dropTestDatabase();
+    
+    this.isSetup = false;
   }
 
   static getPrisma(): PrismaClient {
@@ -44,6 +56,29 @@ export class TestDatabase {
       throw new Error('Test database not initialized. Call setup() first.');
     }
     return this.prisma;
+  }
+
+  // Clean all tables but keep the connection alive
+  static async cleanDatabase(): Promise<void> {
+    if (!this.prisma) {
+      throw new Error('Test database not initialized.');
+    }
+
+    try {
+      // Delete in correct order to respect foreign key constraints
+      await this.prisma.saleItem.deleteMany();
+      await this.prisma.sale.deleteMany();
+      await this.prisma.purchaseItem.deleteMany();
+      await this.prisma.purchase.deleteMany();
+      await this.prisma.product.deleteMany();
+      await this.prisma.category.deleteMany();
+      await this.prisma.customer.deleteMany();
+      await this.prisma.supplier.deleteMany();
+      await this.prisma.user.deleteMany();
+    } catch (error) {
+      console.error('Failed to clean database:', error);
+      throw error;
+    }
   }
 
   private static async createTestDatabase(): Promise<void> {
@@ -110,18 +145,14 @@ export class TestDatabase {
 
   private static async runMigrations(): Promise<void> {
     try {
-      // Generate Prisma client
-      execSync('npx prisma generate', {
-        cwd: process.cwd(),
-        stdio: 'inherit',
-        env: { ...process.env, DATABASE_URL: `postgresql://postgres:postgres@localhost:5432/${TEST_DB_NAME}?schema=public` }
-      });
-
-      // Run migrations
+      // Just run migrations (Prisma generate already done during npm install)
       execSync('npx prisma migrate deploy', {
         cwd: process.cwd(),
-        stdio: 'inherit',
-        env: { ...process.env, DATABASE_URL: `postgresql://postgres:postgres@localhost:5432/${TEST_DB_NAME}?schema=public` }
+        stdio: 'pipe',
+        env: { 
+          ...process.env, 
+          DATABASE_URL: `postgresql://postgres:postgres@localhost:5432/${TEST_DB_NAME}?schema=public` 
+        }
       });
 
       console.log('✅ Ran database migrations');

@@ -39,6 +39,7 @@ export class UsersService {
 
   async findAll(): Promise<UserResponseDto[]> {
     const users = await this.prisma.user.findMany({
+      where: { isActive: true },
       orderBy: { createdAt: 'desc' },
     });
 

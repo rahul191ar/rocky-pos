@@ -171,7 +171,7 @@ describe('DashboardController', () => {
 
       expect(result.topSellingProducts).toHaveLength(0);
       expect(result.lowStockProducts).toHaveLength(0);
-      expect(result.customersAddedToday).toBe(0);
+      expect(result.customersAddedToday).toBe(1); // Customer is created in beforeEach
       expect(result.lastUpdated).toBeInstanceOf(Date);
     });
 
@@ -353,7 +353,7 @@ describe('DashboardController', () => {
 
     it('should handle service errors and throw HTTP exception', async () => {
       // Mock service to throw an error
-      jest.spyOn(service, 'getDashboardSummary').mockRejectedValueOnce(
+      jest.spyOn(service, 'getDashboardSummary').mockRejectedValue(
         new Error('Database connection failed')
       );
 

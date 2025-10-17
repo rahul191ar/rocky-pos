@@ -141,10 +141,15 @@ describe('DashboardService', () => {
       expect(result.todaySales.totalRevenue).toBe(0);
       expect(result.todaySales.totalDiscount).toBe(0);
       expect(result.todaySales.totalTax).toBe(0);
+      expect(result.todaySales.averageSaleValue).toBe(0);
       expect(result.todaySales.totalItemsSold).toBe(0);
-      expect(result.topSellingProducts).toHaveLength(0);
-      expect(result.lowStockProducts).toHaveLength(0);
-      expect(result.customersAddedToday).toBe(0);
+
+      expect(result.topSellingProducts).toEqual([]);
+      expect(result.lowStockProducts).toEqual([]);
+      
+      // Customer was created in beforeEach, so expect 1
+      expect(result.customersAddedToday).toBe(1);
+      expect(result.lastUpdated).toBeInstanceOf(Date);
     });
 
     it('should only include today\'s sales in todaySales', async () => {

@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma, SaleStatus } from '@prisma/client';
 import {
   SalesReportQueryDto,
   ExpenseReportQueryDto,
@@ -12,14 +13,47 @@ import {
   ExpenseSummaryByDateDto,
   ExpenseCategoryDto,
 } from './dto/reports.dto';
-import { SaleStatus } from '@prisma/client';
 
 @Injectable()
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
-  async getSalesReport(query: SalesReportQueryDto): Promise<SalesReportResponseDto> {
+  async getSalesReport(query?: SalesReportQueryDto): Promise<SalesReportResponseDto | any[]> {
+    // Backward compatibility: if called with undefined (not empty object), return legacy format
+    if (query === undefined) {
+      return this.getSalesReportLegacy();
+    }
+    
     const { startDate, endDate, category } = query;
+    
+    // Validate dates if provided
+    if (startDate && isNaN(new Date(startDate).getTime())) {
+      throw new BadRequestException('Invalid start date format');
+    }
+    
+    if (endDate && isNaN(new Date(endDate).getTime())) {
+      throw new BadRequestException('Invalid end date format');
+    }
+    
+    // Validate category ID if provided (support both UUID and CUID formats)
+    if (category) {
+      // Check if it's a valid format (UUID or CUID)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const cuidRegex = /^c[a-z0-9]{24}$/i;
+      
+      if (!uuidRegex.test(category) && !cuidRegex.test(category)) {
+        throw new BadRequestException('Invalid category ID format');
+      }
+      
+      // Check if category exists
+      const categoryExists = await this.prisma.category.findUnique({
+        where: { id: category },
+      });
+      
+      if (!categoryExists) {
+        throw new BadRequestException(`Category with ID ${category} not found`);
+      }
+    }
     
     // Default date range: last 30 days if not provided
     const defaultEndDate = new Date();
@@ -113,45 +147,27 @@ export class ReportsService {
     endDate: Date,
     category?: string,
   ): Promise<SalesSummaryByDateDto[]> {
-    const whereClause: any = {
-      status: SaleStatus.COMPLETED,
-      createdAt: {
-        gte: startDate,
-        lte: endDate,
-      },
-    };
-
-    if (category) {
-      whereClause.items = {
-        some: {
-          product: {
-            categoryId: category,
-          },
-        },
-      };
-    }
-
     // Use raw query for daily grouping
-    const dailySales = await this.prisma.$queryRaw<any[]>`
+    const dailySales = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT 
-        DATE(s.created_at) as date,
+        DATE(s."createdAt") as date,
         COUNT(s.id)::integer as total_sales,
-        COALESCE(SUM(s.final_amount), 0)::float as total_revenue,
+        COALESCE(SUM(s."finalAmount"), 0)::float as total_revenue,
         COALESCE(SUM(s.discount), 0)::float as total_discount,
-        COALESCE(SUM(s.tax_amount), 0)::float as total_tax,
-        COALESCE(AVG(s.final_amount), 0)::float as average_sale_value
+        COALESCE(SUM(s."taxAmount"), 0)::float as total_tax,
+        COALESCE(AVG(s."finalAmount"), 0)::float as average_sale_value
       FROM sales s
-      ${category ? `
-        INNER JOIN sale_items si ON s.id = si.sale_id
-        INNER JOIN products p ON si.product_id = p.id
-      ` : ''}
+      ${category ? Prisma.sql`
+        INNER JOIN sale_items si ON s.id = si."saleId"
+        INNER JOIN products p ON si."productId" = p.id
+      ` : Prisma.empty}
       WHERE s.status = 'COMPLETED'
-        AND s.created_at >= ${startDate}
-        AND s.created_at <= ${endDate}
-        ${category ? `AND p.category_id = ${category}` : ''}
-      GROUP BY DATE(s.created_at)
-      ORDER BY DATE(s.created_at)
-    `;
+        AND s."createdAt" >= ${startDate}
+        AND s."createdAt" <= ${endDate}
+        ${category ? Prisma.sql`AND p."categoryId" = ${category}` : Prisma.empty}
+      GROUP BY DATE(s."createdAt")
+      ORDER BY DATE(s."createdAt")
+    `);
 
     return dailySales.map((day: any) => ({
       date: day.date.toISOString().split('T')[0],
@@ -240,42 +256,26 @@ export class ReportsService {
     endDate: Date,
     category?: string,
   ): Promise<CategorySalesDto[]> {
-    const whereClause: any = {
-      sale: {
-        status: SaleStatus.COMPLETED,
-        createdAt: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-    };
-
-    if (category) {
-      whereClause.product = {
-        categoryId: category,
-      };
-    }
-
     // Use raw query for category breakdown
-    const categoryStats = await this.prisma.$queryRaw<any[]>`
+    const categoryStats = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT 
         c.id as category_id,
         c.name as category_name,
         COUNT(DISTINCT s.id)::integer as total_sales,
-        COALESCE(SUM(si.total_price), 0)::float as total_revenue,
+        COALESCE(SUM(si."totalPrice"), 0)::float as total_revenue,
         COALESCE(SUM(si.quantity), 0)::integer as total_quantity_sold,
-        COALESCE(AVG(si.unit_price), 0)::float as average_price
+        COALESCE(AVG(si."unitPrice"), 0)::float as average_price
       FROM categories c
-      INNER JOIN products p ON c.id = p.category_id
-      INNER JOIN sale_items si ON p.id = si.product_id
-      INNER JOIN sales s ON si.sale_id = s.id
+      INNER JOIN products p ON c.id = p."categoryId"
+      INNER JOIN sale_items si ON p.id = si."productId"
+      INNER JOIN sales s ON si."saleId" = s.id
       WHERE s.status = 'COMPLETED'
-        AND s.created_at >= ${startDate}
-        AND s.created_at <= ${endDate}
-        ${category ? `AND c.id = ${category}` : ''}
+        AND s."createdAt" >= ${startDate}
+        AND s."createdAt" <= ${endDate}
+        ${category ? Prisma.sql`AND c.id = ${category}` : Prisma.empty}
       GROUP BY c.id, c.name
       ORDER BY total_revenue DESC
-    `;
+    `);
 
     return categoryStats.map((cat: any) => ({
       categoryId: cat.category_id,
@@ -338,6 +338,15 @@ export class ReportsService {
 
   async getExpenseReport(query: ExpenseReportQueryDto): Promise<ExpenseReportResponseDto> {
     const { startDate, endDate, category } = query;
+    
+    // Validate dates if provided
+    if (startDate && isNaN(new Date(startDate).getTime())) {
+      throw new BadRequestException('Invalid start date format');
+    }
+    
+    if (endDate && isNaN(new Date(endDate).getTime())) {
+      throw new BadRequestException('Invalid end date format');
+    }
     
     // Default date range: last 30 days if not provided
     const defaultEndDate = new Date();
@@ -411,7 +420,7 @@ export class ReportsService {
     }
 
     // Use raw query for daily grouping
-    const dailyExpenses = await this.prisma.$queryRaw<any[]>`
+    const dailyExpenses = await this.prisma.$queryRaw<any[]>(Prisma.sql`
       SELECT 
         DATE(e.date) as date,
         COALESCE(SUM(e.amount), 0)::float as total_expenses,
@@ -419,10 +428,10 @@ export class ReportsService {
       FROM expenses e
       WHERE e.date >= ${startDate}
         AND e.date <= ${endDate}
-        ${category ? `AND e.category = ${category}` : ''}
+        ${category ? Prisma.sql`AND e.category = ${category}` : Prisma.empty}
       GROUP BY DATE(e.date)
       ORDER BY DATE(e.date)
-    `;
+    `);
 
     return dailyExpenses.map((day: any) => ({
       date: day.date.toISOString().split('T')[0],

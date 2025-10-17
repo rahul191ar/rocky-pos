@@ -221,6 +221,33 @@ export class DashboardService {
 
   // Legacy method for backward compatibility
   async getDashboardStats() {
-    // ...existing code...
+    try {
+      const [totalSales, totalProducts, totalCustomers, totalRevenue, lowStockCount] = await Promise.all([
+        this.prisma.sale.count({ where: { status: SaleStatus.COMPLETED } }),
+        this.prisma.product.count({ where: { isActive: true } }),
+        this.prisma.customer.count(),
+        this.prisma.sale.aggregate({
+          where: { status: SaleStatus.COMPLETED },
+          _sum: { finalAmount: true },
+        }),
+        this.prisma.product.count({
+          where: {
+            isActive: true,
+            quantity: { lt: 10 },
+          },
+        }),
+      ]);
+
+      return {
+        totalSales,
+        totalProducts,
+        totalCustomers,
+        totalRevenue: totalRevenue._sum.finalAmount || 0,
+        lowStockProducts: lowStockCount,
+      };
+    } catch (error) {
+      this.logger.error('Error fetching dashboard stats', error);
+      throw error;
+    }
   }
 }

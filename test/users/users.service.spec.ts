@@ -30,17 +30,8 @@ describe('UsersService', () => {
     service = module.get<UsersService>(UsersService);
     prisma = module.get<PrismaService>(PrismaService);
 
-    // Clear database before each test
-    await prisma.saleItem.deleteMany();
-    await prisma.sale.deleteMany();
-    await prisma.purchaseItem.deleteMany();
-    await prisma.purchase.deleteMany();
-    await prisma.expense.deleteMany();
-    await prisma.product.deleteMany();
-    await prisma.category.deleteMany();
-    await prisma.supplier.deleteMany();
-    await prisma.customer.deleteMany();
-    await prisma.user.deleteMany();
+    // Clear database before each test using centralized method
+    await TestDatabase.cleanDatabase();
   });
 
   it('should be defined', () => {

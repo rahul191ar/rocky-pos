@@ -1,35 +1,32 @@
-import type { Config } from '@jest/types';
+import type { Config } from 'jest';
 
-const config: Config.InitialOptions = {
+const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
-  testEnvironment: 'node',
+  testRegex: '.*\\.spec\\.ts$',
   transform: {
     '^.+\\.(t|j)s$': 'ts-jest',
   },
   collectCoverageFrom: [
     'src/**/*.(t|j)s',
+    '!src/**/*.module.(t|j)s',
+    '!src/**/*.interface.(t|j)s',
+    '!src/**/*.dto.(t|j)s',
+    '!src/**/*.entity.(t|j)s',
     '!src/main.ts',
-    '!src/**/*.module.ts',
-    '!src/**/*.dto.ts',
   ],
   coverageDirectory: './coverage',
-  testTimeout: 10000,
-  setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
-  globalSetup: '<rootDir>/test/setup.ts',
-  globalTeardown: '<rootDir>/test/teardown.ts',
+  testEnvironment: 'node',
+  roots: ['<rootDir>/src/', '<rootDir>/test/'],
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
+    '^src/(.*)$': '<rootDir>/src/$1',
   },
-  testMatch: [
-    '**/__tests__/**/*.spec.ts',
-    '**/?(*.)+(spec|test).ts',
-  ],
-  globals: {
-    'ts-jest': {
-      tsconfig: 'tsconfig.test.json',
-    },
-  },
+  globalSetup: '<rootDir>/test/setup.ts',
+  setupFilesAfterEnv: ['<rootDir>/test/jest-setup.ts'],
+  testTimeout: 30000,
+  maxWorkers: 1, // Run tests serially to avoid database conflicts
+  forceExit: true, // Force exit after all tests complete
+  detectOpenHandles: false, // Don't detect open handles as it can cause issues on Windows
 };
 
 export default config;

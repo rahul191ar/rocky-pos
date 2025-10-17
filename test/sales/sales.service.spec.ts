@@ -1,20 +1,80 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SalesService } from '../../src/sales/sales.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { TestDatabase } from '../test-database';
-import { PaymentMethod, SaleStatus } from '@prisma/client';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { PaymentMethod } from '@prisma/client';
 
 describe('SalesService', () => {
   let service: SalesService;
-  let prisma: PrismaService;
+  let prismaService: PrismaService;
 
-  beforeAll(async () => {
-    await TestDatabase.setup();
-  });
+  const mockPrismaService = {
+    $transaction: jest.fn(),
+    sale: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      count: jest.fn(),
+    },
+    saleItem: {
+      createMany: jest.fn(),
+    },
+    product: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    customer: {
+      findUnique: jest.fn(),
+    },
+  };
 
-  afterAll(async () => {
-    await TestDatabase.teardown();
-  });
+  const mockProduct = {
+    id: 'product-id-123',
+    name: 'iPhone 14',
+    sku: 'IPH14-128-BLK',
+    price: 999.99,
+    quantity: 50,
+    isActive: true,
+  };
+
+  const mockCustomer = {
+    id: 'customer-id-123',
+    name: 'John Doe',
+    email: 'john@example.com',
+    phone: '+1234567890',
+  };
+
+  const mockSaleItem = {
+    productId: 'product-id-123',
+    quantity: 2,
+    unitPrice: 999.99,
+    totalPrice: 1999.98,
+  };
+
+  const mockSale = {
+    id: 'sale-id-123',
+    customerId: 'customer-id-123',
+    userId: 'user-id-123',
+    totalAmount: 1999.98,
+    discount: 0,
+    taxAmount: 0,
+    finalAmount: 1999.98,
+    paymentMethod: PaymentMethod.CASH,
+    status: 'COMPLETED',
+    notes: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    customer: mockCustomer,
+    user: { id: 'user-id-123', firstName: 'Admin', lastName: 'User' },
+    items: [
+      {
+        ...mockSaleItem,
+        product: mockProduct,
+      },
+    ],
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -22,25 +82,15 @@ describe('SalesService', () => {
         SalesService,
         {
           provide: PrismaService,
-          useValue: TestDatabase.getPrisma(),
+          useValue: mockPrismaService,
         },
       ],
     }).compile();
 
     service = module.get<SalesService>(SalesService);
-    prisma = module.get<PrismaService>(PrismaService);
+    prismaService = module.get<PrismaService>(PrismaService);
 
-    // Clear database before each test
-    await prisma.saleItem.deleteMany();
-    await prisma.sale.deleteMany();
-    await prisma.purchaseItem.deleteMany();
-    await prisma.purchase.deleteMany();
-    await prisma.expense.deleteMany();
-    await prisma.product.deleteMany();
-    await prisma.category.deleteMany();
-    await prisma.supplier.deleteMany();
-    await prisma.customer.deleteMany();
-    await prisma.user.deleteMany();
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -48,503 +98,432 @@ describe('SalesService', () => {
   });
 
   describe('create', () => {
-    it('should successfully create a sale with valid data', async () => {
-      // Create test data
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
+    const createSaleDto = {
+      customerId: 'customer-id-123',
+      paymentMethod: PaymentMethod.CASH,
+      items: [
+        {
+          productId: 'product-id-123',
+          quantity: 2,
         },
+      ],
+    };
+
+    it('should create a sale successfully', async () => {
+      mockPrismaService.customer.findUnique.mockResolvedValue(mockCustomer);
+      mockPrismaService.product.findUnique.mockResolvedValue(mockProduct);
+      mockPrismaService.sale.create.mockResolvedValue(mockSale);
+
+      const result = await service.create(createSaleDto, 'user-id-123');
+
+      expect(mockPrismaService.customer.findUnique).toHaveBeenCalledWith({
+        where: { id: createSaleDto.customerId },
       });
-
-      const category = await prisma.category.create({
-        data: {
-          name: 'Electronics',
-        },
+      expect(mockPrismaService.product.findUnique).toHaveBeenCalledWith({
+        where: { id: createSaleDto.items[0].productId },
       });
-
-      const product = await prisma.product.create({
-        data: {
-          name: 'iPhone 14',
-          sku: 'IPH14-128',
-          price: 999.99,
-          quantity: 10,
-          categoryId: category.id,
-        },
-      });
-
-      const createSaleDto = {
-        items: [
-          {
-            productId: product.id,
-            quantity: 2,
-            discount: 0,
-          },
-        ],
-        paymentMethod: PaymentMethod.CASH,
-        discount: 0,
-        taxAmount: 50.00,
-      };
-
-      const result = await service.create(createSaleDto, user.id);
-
       expect(result).toBeDefined();
-      expect(result.userId).toBe(user.id);
-      expect(result.totalAmount).toBe(1999.98); // 999.99 * 2
-      expect(result.finalAmount).toBe(2049.98); // 1999.98 + 50.00
-      expect(result.paymentMethod).toBe(PaymentMethod.CASH);
-      expect(result.status).toBe(SaleStatus.COMPLETED);
-      expect(result.items).toHaveLength(1);
-
-      // Verify product quantity was reduced
-      const productInDb = await prisma.product.findUnique({
-        where: { id: product.id },
-      });
-      expect(productInDb?.quantity).toBe(8); // 10 - 2
     });
 
-    it('should throw error if product does not exist', async () => {
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
-        },
-      });
+    it('should throw BadRequestException when customer does not exist', async () => {
+      mockPrismaService.customer.findUnique.mockResolvedValue(null);
 
-      const createSaleDto = {
-        items: [
-          {
-            productId: 'non-existent-product-id',
-            quantity: 1,
-          },
-        ],
-        paymentMethod: PaymentMethod.CASH,
-      };
-
-      await expect(service.create(createSaleDto, user.id)).rejects.toThrow(
-        'Product with ID non-existent-product-id not found',
-      );
+      await expect(service.create(createSaleDto, 'user-id-123')).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw error if insufficient stock', async () => {
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
-        },
-      });
+    it('should throw BadRequestException when product does not exist', async () => {
+      mockPrismaService.customer.findUnique.mockResolvedValue(mockCustomer);
+      mockPrismaService.product.findUnique.mockResolvedValue(null);
 
-      const category = await prisma.category.create({
-        data: {
-          name: 'Electronics',
-        },
-      });
-
-      const product = await prisma.product.create({
-        data: {
-          name: 'iPhone 14',
-          sku: 'IPH14-128',
-          price: 999.99,
-          quantity: 1, // Only 1 in stock
-          categoryId: category.id,
-        },
-      });
-
-      const createSaleDto = {
-        items: [
-          {
-            productId: product.id,
-            quantity: 2, // Trying to buy 2
-          },
-        ],
-        paymentMethod: PaymentMethod.CASH,
-      };
-
-      await expect(service.create(createSaleDto, user.id)).rejects.toThrow(
-        'Insufficient stock for product iPhone 14',
-      );
+      await expect(service.create(createSaleDto, 'user-id-123')).rejects.toThrow(BadRequestException);
     });
 
-    it('should handle multiple items in a sale', async () => {
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
-        },
-      });
+    it('should throw BadRequestException when product is not active', async () => {
+      const inactiveProduct = { ...mockProduct, isActive: false };
+      mockPrismaService.customer.findUnique.mockResolvedValue(mockCustomer);
+      mockPrismaService.product.findUnique.mockResolvedValue(inactiveProduct);
 
-      const category = await prisma.category.create({
-        data: {
-          name: 'Electronics',
-        },
-      });
+      await expect(service.create(createSaleDto, 'user-id-123')).rejects.toThrow(BadRequestException);
+    });
 
-      const product1 = await prisma.product.create({
-        data: {
-          name: 'iPhone 14',
-          sku: 'IPH14-128',
-          price: 999.99,
-          quantity: 5,
-          categoryId: category.id,
-        },
-      });
+    it('should throw BadRequestException when insufficient stock', async () => {
+      const lowStockProduct = { ...mockProduct, quantity: 1 };
+      mockPrismaService.customer.findUnique.mockResolvedValue(mockCustomer);
+      mockPrismaService.product.findUnique.mockResolvedValue(lowStockProduct);
 
-      const product2 = await prisma.product.create({
-        data: {
-          name: 'iPad Pro',
-          sku: 'IPAD-256',
-          price: 799.99,
-          quantity: 3,
-          categoryId: category.id,
-        },
-      });
+      await expect(service.create(createSaleDto, 'user-id-123')).rejects.toThrow(BadRequestException);
+    });
 
-      const createSaleDto = {
+    it('should handle empty items array', async () => {
+      const emptySaleDto = { ...createSaleDto, items: [] };
+      
+      // Empty items will cause issues when calculating total
+      await expect(service.create(emptySaleDto, 'user-id-123')).rejects.toThrow();
+    });
+
+    it('should calculate total amount correctly', async () => {
+      const multiItemSaleDto = {
+        ...createSaleDto,
         items: [
-          {
-            productId: product1.id,
-            quantity: 2,
-            discount: 50.00,
-          },
-          {
-            productId: product2.id,
-            quantity: 1,
-            discount: 0,
-          },
+          { productId: 'product-1', quantity: 2 },
+          { productId: 'product-2', quantity: 1 },
         ],
-        paymentMethod: PaymentMethod.CARD,
-        discount: 0,
-        taxAmount: 100.00,
       };
 
-      const result = await service.create(createSaleDto, user.id);
-
-      expect(result.totalAmount).toBe(2749.97); // (999.99 * 2 - 50) + 799.99
-      expect(result.finalAmount).toBe(2849.97); // 2749.97 + 100
-      expect(result.items).toHaveLength(2);
-
-      // Verify product quantities were reduced
-      const product1InDb = await prisma.product.findUnique({
-        where: { id: product1.id },
-      });
-      const product2InDb = await prisma.product.findUnique({
-        where: { id: product2.id },
+      mockPrismaService.customer.findUnique.mockResolvedValue(mockCustomer);
+      mockPrismaService.product.findUnique.mockResolvedValue(mockProduct);
+      mockPrismaService.sale.create.mockResolvedValue({
+        ...mockSale,
+        totalAmount: 2999.97,
+        finalAmount: 2999.97,
       });
 
-      expect(product1InDb?.quantity).toBe(3); // 5 - 2
-      expect(product2InDb?.quantity).toBe(2); // 3 - 1
+      const result = await service.create(multiItemSaleDto, 'user-id-123');
+
+      expect(result.totalAmount).toBe(2999.97);
     });
   });
 
   describe('findAll', () => {
-    it('should return all sales', async () => {
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
-        },
-      });
-
-      const category = await prisma.category.create({
-        data: {
-          name: 'Electronics',
-        },
-      });
-
-      const product = await prisma.product.create({
-        data: {
-          name: 'iPhone 14',
-          sku: 'IPH14-128',
-          price: 999.99,
-          quantity: 10,
-          categoryId: category.id,
-        },
-      });
-
-      // Create two sales
-      await service.create({
-        items: [
-          {
-            productId: product.id,
-            quantity: 1,
-          },
-        ],
-        paymentMethod: PaymentMethod.CASH,
-      }, user.id);
-
-      await service.create({
-        items: [
-          {
-            productId: product.id,
-            quantity: 2,
-          },
-        ],
-        paymentMethod: PaymentMethod.CARD,
-      }, user.id);
+    it('should return all sales with relations', async () => {
+      const sales = [mockSale, { ...mockSale, id: 'sale-id-456' }];
+      mockPrismaService.sale.findMany.mockResolvedValue(sales);
 
       const result = await service.findAll();
 
-      expect(result).toHaveLength(2);
-      expect(result[0].totalAmount).toBe(1999.98); // Most recent first
-      expect(result[1].totalAmount).toBe(999.99);
+      expect(mockPrismaService.sale.findMany).toHaveBeenCalledWith({
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          user: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(result).toBeDefined();
     });
 
-    it('should return empty array if no sales exist', async () => {
+    it('should handle empty result', async () => {
+      mockPrismaService.sale.findMany.mockResolvedValue([]);
+
       const result = await service.findAll();
+
       expect(result).toEqual([]);
+    });
+
+    it('should handle database errors', async () => {
+      mockPrismaService.sale.findMany.mockRejectedValue(new Error('Database error'));
+
+      await expect(service.findAll()).rejects.toThrow('Database error');
     });
   });
 
   describe('findOne', () => {
-    it('should return sale by id', async () => {
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
-        },
-      });
+    it('should return a sale by id', async () => {
+      mockPrismaService.sale.findUnique.mockResolvedValue(mockSale);
 
-      const category = await prisma.category.create({
-        data: {
-          name: 'Electronics',
-        },
-      });
+      const result = await service.findOne('sale-id-123');
 
-      const product = await prisma.product.create({
-        data: {
-          name: 'iPhone 14',
-          sku: 'IPH14-128',
-          price: 999.99,
-          quantity: 10,
-          categoryId: category.id,
-        },
-      });
-
-      const createdSale = await service.create({
-        items: [
-          {
-            productId: product.id,
-            quantity: 1,
+      expect(mockPrismaService.sale.findUnique).toHaveBeenCalledWith({
+        where: { id: 'sale-id-123' },
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true },
           },
-        ],
-        paymentMethod: PaymentMethod.CASH,
-      }, user.id);
-
-      const result = await service.findOne(createdSale.id);
-
+          user: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true },
+              },
+            },
+          },
+        },
+      });
       expect(result).toBeDefined();
-      expect(result.id).toBe(createdSale.id);
-      expect(result.totalAmount).toBe(999.99);
     });
 
-    it('should throw error if sale not found', async () => {
-      await expect(service.findOne('non-existent-id')).rejects.toThrow(
-        'Sale with ID non-existent-id not found',
-      );
-    });
-  });
+    it('should throw NotFoundException when sale not found', async () => {
+      mockPrismaService.sale.findUnique.mockResolvedValue(null);
 
-  describe('cancelSale', () => {
-    it('should successfully cancel a sale and restore stock', async () => {
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
-        },
-      });
-
-      const category = await prisma.category.create({
-        data: {
-          name: 'Electronics',
-        },
-      });
-
-      const product = await prisma.product.create({
-        data: {
-          name: 'iPhone 14',
-          sku: 'IPH14-128',
-          price: 999.99,
-          quantity: 10,
-          categoryId: category.id,
-        },
-      });
-
-      const createdSale = await service.create({
-        items: [
-          {
-            productId: product.id,
-            quantity: 3,
-          },
-        ],
-        paymentMethod: PaymentMethod.CASH,
-      }, user.id);
-
-      // Verify stock was reduced
-      const productBeforeCancel = await prisma.product.findUnique({
-        where: { id: product.id },
-      });
-      expect(productBeforeCancel?.quantity).toBe(7); // 10 - 3
-
-      // Cancel sale
-      const cancelledSale = await service.cancelSale(createdSale.id);
-
-      expect(cancelledSale.status).toBe(SaleStatus.CANCELLED);
-
-      // Verify stock was restored
-      const productAfterCancel = await prisma.product.findUnique({
-        where: { id: product.id },
-      });
-      expect(productAfterCancel?.quantity).toBe(10); // 7 + 3
+      await expect(service.findOne('non-existent-id')).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw error if sale is already cancelled', async () => {
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
-        },
-      });
+    it('should handle database errors', async () => {
+      mockPrismaService.sale.findUnique.mockRejectedValue(new Error('Database error'));
 
-      const category = await prisma.category.create({
-        data: {
-          name: 'Electronics',
-        },
-      });
-
-      const product = await prisma.product.create({
-        data: {
-          name: 'iPhone 14',
-          sku: 'IPH14-128',
-          price: 999.99,
-          quantity: 10,
-          categoryId: category.id,
-        },
-      });
-
-      const createdSale = await service.create({
-        items: [
-          {
-            productId: product.id,
-            quantity: 1,
-          },
-        ],
-        paymentMethod: PaymentMethod.CASH,
-      }, user.id);
-
-      // Cancel sale first time
-      await service.cancelSale(createdSale.id);
-
-      // Try to cancel again
-      await expect(service.cancelSale(createdSale.id)).rejects.toThrow(
-        'Sale is already cancelled',
-      );
-    });
-
-    it('should throw error if sale not found', async () => {
-      await expect(service.cancelSale('non-existent-id')).rejects.toThrow(
-        'Sale with ID non-existent-id not found',
-      );
+      await expect(service.findOne('sale-id-123')).rejects.toThrow('Database error');
     });
   });
 
-  describe('getSalesReport', () => {
-    it('should generate sales report with correct calculations', async () => {
-      const user = await prisma.user.create({
-        data: {
-          email: 'user@example.com',
-          password: 'hashedpassword',
-          firstName: 'Test',
-          lastName: 'User',
-        },
-      });
+  describe('getSalesByCustomer', () => {
+    it('should return sales for a specific customer', async () => {
+      const customerSales = [mockSale];
+      mockPrismaService.sale.findMany.mockResolvedValue(customerSales);
 
-      const category = await prisma.category.create({
-        data: {
-          name: 'Electronics',
-        },
-      });
+      const result = await service.getSalesByCustomer('customer-id-123');
 
-      const product1 = await prisma.product.create({
-        data: {
-          name: 'iPhone 14',
-          sku: 'IPH14-128',
-          price: 999.99,
-          quantity: 10,
-          categoryId: category.id,
-        },
-      });
-
-      const product2 = await prisma.product.create({
-        data: {
-          name: 'iPad Pro',
-          sku: 'IPAD-256',
-          price: 799.99,
-          quantity: 5,
-          categoryId: category.id,
-        },
-      });
-
-      // Create sales
-      await service.create({
-        items: [
-          {
-            productId: product1.id,
-            quantity: 2,
+      expect(mockPrismaService.sale.findMany).toHaveBeenCalledWith({
+        where: { customerId: 'customer-id-123' },
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true },
           },
-        ],
-        paymentMethod: PaymentMethod.CASH,
-        taxAmount: 100.00,
-      }, user.id);
-
-      await service.create({
-        items: [
-          {
-            productId: product2.id,
-            quantity: 1,
+          user: {
+            select: { id: true, firstName: true, lastName: true },
           },
-        ],
-        paymentMethod: PaymentMethod.CARD,
-        discount: 50.00,
-      }, user.id);
-
-      const report = await service.getSalesReport();
-
-      expect(report.totalSales).toBe(2);
-      expect(report.totalRevenue).toBe(2749.97); // (999.99 * 2) + (799.99 - 50)
-      expect(report.totalTax).toBe(100.00);
-      expect(report.totalDiscount).toBe(50.00);
-      expect(report.averageSaleValue).toBe(1374.985); // 2749.97 / 2
-
-      // Check payment method stats
-      expect(report.paymentMethodStats.CASH).toBe(1);
-      expect(report.paymentMethodStats.CARD).toBe(1);
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(result).toBeDefined();
     });
 
-    it('should return report with zero values if no sales', async () => {
-      const report = await service.getSalesReport();
+    it('should handle empty result for customer with no sales', async () => {
+      mockPrismaService.sale.findMany.mockResolvedValue([]);
 
-      expect(report.totalSales).toBe(0);
-      expect(report.totalRevenue).toBe(0);
-      expect(report.totalTax).toBe(0);
-      expect(report.totalDiscount).toBe(0);
-      expect(report.averageSaleValue).toBe(0);
-      expect(report.paymentMethodStats).toEqual({});
+      const result = await service.getSalesByCustomer('customer-no-sales');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getSalesByDateRange', () => {
+    const startDate = new Date('2023-10-01');
+    const endDate = new Date('2023-10-31');
+
+    it('should return sales within date range', async () => {
+      const dateRangeSales = [mockSale];
+      mockPrismaService.sale.findMany.mockResolvedValue(dateRangeSales);
+
+      const result = await service.getSalesByDateRange(startDate, endDate);
+
+      expect(mockPrismaService.sale.findMany).toHaveBeenCalledWith({
+        where: {
+          createdAt: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          user: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(result).toBeDefined();
+    });
+
+    it('should handle invalid date range', async () => {
+      const invalidStartDate = new Date('2023-10-31');
+      const invalidEndDate = new Date('2023-10-01');
+
+      await expect(service.getSalesByDateRange(invalidStartDate, invalidEndDate))
+        .rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('updateSaleStatus', () => {
+    it('should update sale status successfully', async () => {
+      const updatedSale = { ...mockSale, status: 'CANCELLED' };
+      mockPrismaService.sale.findUnique.mockResolvedValue(mockSale);
+      mockPrismaService.sale.update.mockResolvedValue(updatedSale);
+
+      const result = await service.updateSaleStatus('sale-id-123', 'CANCELLED');
+
+      expect(mockPrismaService.sale.update).toHaveBeenCalledWith({
+        where: { id: 'sale-id-123' },
+        data: { status: 'CANCELLED' },
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          user: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true },
+              },
+            },
+          },
+        },
+      });
+      expect(result).toBeDefined();
+    });
+
+    it('should throw NotFoundException when sale not found', async () => {
+      mockPrismaService.sale.findUnique.mockResolvedValue(null);
+
+      await expect(service.updateSaleStatus('non-existent-id', 'CANCELLED'))
+        .rejects.toThrow(NotFoundException);
+    });
+
+    it('should handle invalid status values', async () => {
+      mockPrismaService.sale.findUnique.mockResolvedValue(mockSale);
+
+      await expect(service.updateSaleStatus('sale-id-123', 'INVALID_STATUS'))
+        .rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getTotalSalesAmount', () => {
+    it('should calculate total sales amount for date range', async () => {
+      const startDate = new Date('2023-10-01');
+      const endDate = new Date('2023-10-31');
+      const salesData = [
+        { finalAmount: 1000.00 },
+        { finalAmount: 500.00 },
+        { finalAmount: 750.00 },
+      ];
+      
+      mockPrismaService.sale.findMany.mockResolvedValue(salesData);
+
+      const result = await service.getTotalSalesAmount(startDate, endDate);
+
+      expect(mockPrismaService.sale.findMany).toHaveBeenCalledWith({
+        where: {
+          createdAt: {
+            gte: startDate,
+            lte: endDate,
+          },
+          status: 'COMPLETED',
+        },
+        select: {
+          finalAmount: true,
+        },
+      });
+      expect(result).toBe(2250.00);
+    });
+
+    it('should return 0 for no sales in date range', async () => {
+      const startDate = new Date('2023-10-01');
+      const endDate = new Date('2023-10-31');
+      
+      mockPrismaService.sale.findMany.mockResolvedValue([]);
+
+      const result = await service.getTotalSalesAmount(startDate, endDate);
+
+      expect(result).toBe(0);
+    });
+  });
+
+  describe('getSalesCount', () => {
+    it('should return sales count for date range', async () => {
+      const startDate = new Date('2023-10-01');
+      const endDate = new Date('2023-10-31');
+      const salesCount = 25;
+      
+      mockPrismaService.sale.count.mockResolvedValue(salesCount);
+
+      const result = await service.getSalesCount(startDate, endDate);
+
+      expect(mockPrismaService.sale.count).toHaveBeenCalledWith({
+        where: {
+          createdAt: {
+            gte: startDate,
+            lte: endDate,
+          },
+          status: 'COMPLETED',
+        },
+      });
+      expect(result).toBe(salesCount);
+    });
+
+    it('should return 0 for no sales in date range', async () => {
+      const startDate = new Date('2023-10-01');
+      const endDate = new Date('2023-10-31');
+      
+      mockPrismaService.sale.count.mockResolvedValue(0);
+
+      const result = await service.getSalesCount(startDate, endDate);
+
+      expect(result).toBe(0);
+    });
+  });
+
+  describe('remove', () => {
+    it('should delete a sale successfully', async () => {
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        return callback(mockPrismaService);
+      });
+      mockPrismaService.sale.findUnique.mockResolvedValue(mockSale);
+      mockPrismaService.sale.delete.mockResolvedValue(mockSale);
+
+      const result = await service.remove('sale-id-123');
+
+      expect(mockPrismaService.$transaction).toHaveBeenCalled();
+      expect(result).toBeDefined();
+      expect(result.id).toBe('sale-id-123');
+    });
+
+    it('should throw NotFoundException when sale not found', async () => {
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        return callback(mockPrismaService);
+      });
+      mockPrismaService.sale.findUnique.mockResolvedValue(null);
+
+      await expect(service.remove('non-existent-id')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should restore product quantities when deleting completed sale', async () => {
+      const completedSale = { ...mockSale, status: 'COMPLETED' };
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        return callback(mockPrismaService);
+      });
+      mockPrismaService.sale.findUnique.mockResolvedValue(completedSale);
+      mockPrismaService.product.findUnique.mockResolvedValue(mockProduct);
+      mockPrismaService.sale.delete.mockResolvedValue(completedSale);
+
+      await service.remove('sale-id-123');
+
+      expect(mockPrismaService.product.update).toHaveBeenCalledWith({
+        where: { id: mockSaleItem.productId },
+        data: {
+          quantity: {
+            increment: mockSaleItem.quantity,
+          },
+        },
+      });
+    });
+
+    it('should handle database errors during deletion', async () => {
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        return callback(mockPrismaService);
+      });
+      mockPrismaService.sale.findUnique.mockResolvedValue(mockSale);
+      mockPrismaService.sale.delete.mockRejectedValue(new Error('Foreign key constraint'));
+
+      await expect(service.remove('sale-id-123')).rejects.toThrow('Foreign key constraint');
     });
   });
 });

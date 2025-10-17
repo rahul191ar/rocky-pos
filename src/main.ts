@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { PrismaService } from './prisma/prisma.service';
 
@@ -23,6 +24,52 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
   }));
 
+  // Configure Swagger Documentation
+  const config = new DocumentBuilder()
+    .setTitle('Rocky POS API')
+    .setDescription('A comprehensive Point of Sale (POS) system API built with NestJS and Prisma')
+    .setVersion('1.0')
+    .addTag('Authentication', 'Authentication and authorization endpoints')
+    .addTag('Users', 'User management operations')
+    .addTag('Products', 'Product catalog management')
+    .addTag('Categories', 'Product category management')
+    .addTag('Suppliers', 'Supplier management')
+    .addTag('Customers', 'Customer management')
+    .addTag('Sales', 'Sales transaction management')
+    .addTag('Purchases', 'Purchase order management')
+    .addTag('Expenses', 'Business expense tracking')
+    .addTag('Reports', 'Business analytics and reporting')
+    .addTag('Dashboard', 'Dashboard and summary statistics')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'JWT-auth',
+    )
+    .addServer('http://localhost:3000', 'Development server')
+    .addServer('https://api.rockypos.com', 'Production server')
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    },
+    customSiteTitle: 'Rocky POS API Documentation',
+    customfavIcon: '/favicon.ico',
+    customCss: `
+      .swagger-ui .topbar { display: none }
+      .swagger-ui .info .title { color: #1976d2 }
+    `,
+  });
+
   // Enable shutdown hooks for Prisma
   const prismaService = app.get(PrismaService);
   await prismaService.enableShutdownHooks(app);
@@ -39,5 +86,6 @@ async function bootstrap() {
 
   await app.listen(process.env.PORT ?? 3000);
   console.log(`🚀 Rocky POS API is running on: ${await app.getUrl()}`);
+  console.log(`📚 API Documentation available at: ${await app.getUrl()}/api/docs`);
 }
 bootstrap();
