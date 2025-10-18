@@ -164,6 +164,44 @@ export class UpdateSaleDto {
   notes?: string;
 }
 
+export class SaleItemResponseDto {
+  @ApiProperty({ description: 'Sale item ID', example: 'item-id-123' })
+  id: string;
+
+  @ApiProperty({ description: 'Associated sale ID', example: 'sale-id-123' })
+  saleId: string;
+
+  @ApiProperty({ description: 'Product ID', example: 'product-id-123' })
+  productId: string;
+
+  @ApiProperty({ description: 'Quantity sold', example: 2 })
+  quantity: number;
+
+  @ApiProperty({ description: 'Unit price at time of sale', example: 999.99 })
+  unitPrice: number;
+
+  @ApiProperty({ description: 'Discount applied to this item', example: 0 })
+  discount: number;
+
+  @ApiProperty({ description: 'Total price for this item', example: 1999.98 })
+  totalPrice: number;
+
+  // Relations
+  @ApiPropertyOptional({
+    description: 'Product information',
+    example: {
+      id: 'product-id-123',
+      name: 'iPhone 14',
+      sku: 'IPH14-128-BLK'
+    }
+  })
+  product?: {
+    id: string;
+    name: string;
+    sku: string;
+  };
+}
+
 export class SaleResponseDto {
   @ApiProperty({ description: 'Sale ID', example: 'sale-id-123' })
   id: string;
@@ -235,42 +273,4 @@ export class SaleResponseDto {
     type: [SaleItemResponseDto]
   })
   items?: SaleItemResponseDto[];
-}
-
-export class SaleItemResponseDto {
-  @ApiProperty({ description: 'Sale item ID', example: 'item-id-123' })
-  id: string;
-
-  @ApiProperty({ description: 'Associated sale ID', example: 'sale-id-123' })
-  saleId: string;
-
-  @ApiProperty({ description: 'Product ID', example: 'product-id-123' })
-  productId: string;
-
-  @ApiProperty({ description: 'Quantity sold', example: 2 })
-  quantity: number;
-
-  @ApiProperty({ description: 'Unit price at time of sale', example: 999.99 })
-  unitPrice: number;
-
-  @ApiProperty({ description: 'Discount applied to this item', example: 0 })
-  discount: number;
-
-  @ApiProperty({ description: 'Total price for this item', example: 1999.98 })
-  totalPrice: number;
-
-  // Relations
-  @ApiPropertyOptional({
-    description: 'Product information',
-    example: {
-      id: 'product-id-123',
-      name: 'iPhone 14',
-      sku: 'IPH14-128-BLK'
-    }
-  })
-  product?: {
-    id: string;
-    name: string;
-    sku: string;
-  };
 }

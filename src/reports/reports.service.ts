@@ -18,10 +18,10 @@ import {
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
-  async getSalesReport(query?: SalesReportQueryDto): Promise<SalesReportResponseDto | any[]> {
-    // Backward compatibility: if called with undefined (not empty object), return legacy format
-    if (query === undefined) {
-      return this.getSalesReportLegacy();
+  async getSalesReport(query?: SalesReportQueryDto): Promise<SalesReportResponseDto> {
+    // Get sales report with proper filtering
+    if (!query) {
+      query = {};
     }
     
     const { startDate, endDate, category } = query;

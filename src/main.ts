@@ -32,21 +32,19 @@ async function bootstrap() {
     .addTag('Authentication', 'Authentication and authorization endpoints')
     .addTag('Users', 'User management operations')
     .addTag('Products', 'Product catalog management')
-    .addTag('Categories', 'Product category management')
     .addTag('Suppliers', 'Supplier management')
     .addTag('Customers', 'Customer management')
     .addTag('Sales', 'Sales transaction management')
     .addTag('Purchases', 'Purchase order management')
     .addTag('Expenses', 'Business expense tracking')
-    .addTag('Reports', 'Business analytics and reporting')
     .addTag('Dashboard', 'Dashboard and summary statistics')
+    .addTag('Invoices', 'Invoice and billing management')
     .addBearerAuth(
       {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
         name: 'JWT',
-        description: 'Enter JWT token',
         in: 'header',
       },
       'JWT-auth',

@@ -1,5 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -10,7 +10,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User model for authentication and user management
+// ======================
+// User Model
+// ======================
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -26,11 +28,14 @@ model User {
   sales     Sale[]
   purchases Purchase[]
   expenses  Expense[]
+  invoices  Invoice[]
 
   @@map("users")
 }
 
-// Product model for inventory management
+// ======================
+// Product Model
+// ======================
 model Product {
   id          String   @id @default(cuid())
   name        String
@@ -48,15 +53,18 @@ model Product {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  category   Category    @relation(fields: [categoryId], references: [id])
-  supplier   Supplier?   @relation(fields: [supplierId], references: [id])
-  saleItems  SaleItem[]
+  category      Category       @relation(fields: [categoryId], references: [id])
+  supplier      Supplier?      @relation(fields: [supplierId], references: [id])
+  saleItems     SaleItem[]
   purchaseItems PurchaseItem[]
+  invoiceItems  InvoiceItem[]
 
   @@map("products")
 }
 
-// Category model for product categorization
+// ======================
+// Category Model
+// ======================
 model Category {
   id          String   @id @default(cuid())
   name        String   @unique
@@ -71,80 +79,90 @@ model Category {
   @@map("categories")
 }
 
-// Customer model for customer management
+// ======================
+// Customer Model
+// ======================
 model Customer {
-  id          String   @id @default(cuid())
-  firstName   String
-  lastName    String
-  email       String?
-  phone       String?
-  address     String?
-  city        String?
-  state       String?
-  zipCode     String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  address   String?
+  city      String?
+  state     String?
+  zipCode   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  sales Sale[]
+  sales    Sale[]
+  invoices Invoice[]
 
   @@map("customers")
 }
 
-// Supplier model for supplier management
+// ======================
+// Supplier Model
+// ======================
 model Supplier {
-  id          String   @id @default(cuid())
-  name        String
+  id            String   @id @default(cuid())
+  name          String
   contactPerson String?
-  email       String?
-  phone       String?
-  address     String?
-  city        String?
-  state       String?
-  zipCode     String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations
-  products Product[]
+  products  Product[]
   purchases Purchase[]
 
   @@map("suppliers")
 }
 
-// Sale model for sales transactions
+// ======================
+// Sale Model
+// ======================
 model Sale {
-  id          String   @id @default(cuid())
-  customerId  String?
-  userId      String
-  totalAmount Float
-  discount    Float    @default(0)
-  taxAmount   Float    @default(0)
-  finalAmount Float
+  id            String        @id @default(cuid())
+  customerId    String?
+  userId        String
+  totalAmount   Float
+  discount      Float         @default(0)
+  taxAmount     Float         @default(0)
+  finalAmount   Float
   paymentMethod PaymentMethod
-  status      SaleStatus @default(PENDING)
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status        SaleStatus    @default(PENDING)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   // Relations
-  customer Customer? @relation(fields: [customerId], references: [id])
-  user     User      @relation(fields: [userId], references: [id])
+  customer Customer?  @relation(fields: [customerId], references: [id])
+  user     User       @relation(fields: [userId], references: [id])
   items    SaleItem[]
+  invoice  Invoice?
 
   @@map("sales")
 }
 
-// Sale Item model for individual items in a sale
+// ======================
+// Sale Item Model
+// ======================
 model SaleItem {
-  id        String @id @default(cuid())
-  saleId    String
-  productId String
-  quantity  Int
-  unitPrice Float
-  discount  Float  @default(0)
+  id         String @id @default(cuid())
+  saleId     String
+  productId  String
+  quantity   Int
+  unitPrice  Float
+  discount   Float  @default(0)
   totalPrice Float
 
   // Relations
@@ -154,29 +172,33 @@ model SaleItem {
   @@map("sale_items")
 }
 
-// Purchase model for purchase transactions
+// ======================
+// Purchase Model
+// ======================
 model Purchase {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   supplierId  String
   userId      String
   totalAmount Float
-  discount    Float    @default(0)
-  taxAmount   Float    @default(0)
+  discount    Float          @default(0)
+  taxAmount   Float          @default(0)
   finalAmount Float
   status      PurchaseStatus @default(PENDING)
   notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   // Relations
-  supplier Supplier @relation(fields: [supplierId], references: [id])
-  user     User     @relation(fields: [userId], references: [id])
+  supplier Supplier       @relation(fields: [supplierId], references: [id])
+  user     User           @relation(fields: [userId], references: [id])
   items    PurchaseItem[]
 
   @@map("purchases")
 }
 
-// Purchase Item model for individual items in a purchase
+// ======================
+// Purchase Item Model
+// ======================
 model PurchaseItem {
   id         String @id @default(cuid())
   purchaseId String
@@ -192,7 +214,9 @@ model PurchaseItem {
   @@map("purchase_items")
 }
 
-// Expense model for expense tracking
+// ======================
+// Expense Model
+// ======================
 model Expense {
   id          String   @id @default(cuid())
   userId      String
@@ -209,7 +233,61 @@ model Expense {
   @@map("expenses")
 }
 
+// ======================
+// Invoice Model
+// ======================
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+  customerId    String
+  userId        String
+  saleId        String?       @unique
+  subtotal      Float         @default(0)
+  totalAmount   Float
+  discount      Float         @default(0)
+  taxAmount     Float         @default(0)
+  finalAmount   Float
+  status        InvoiceStatus @default(UNPAID)
+  invoiceDate   DateTime      @default(now())
+  dueDate       DateTime
+  paidDate      DateTime?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  customer Customer      @relation(fields: [customerId], references: [id])
+  user     User          @relation(fields: [userId], references: [id])
+  sale     Sale?         @relation(fields: [saleId], references: [id])
+  items    InvoiceItem[]
+
+  @@map("invoices")
+}
+
+// ======================
+// Invoice Item Model
+// ======================
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  productId   String?
+  description String
+  quantity    Int
+  unitPrice   Float
+  discount    Float   @default(0)
+  taxAmount   Float   @default(0)
+  totalPrice  Float
+
+  // Relations
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@map("invoice_items")
+}
+
+// ======================
 // Enums
+// ======================
 enum Role {
   SUPER_ADMIN
   ADMIN
@@ -235,5 +313,13 @@ enum SaleStatus {
 enum PurchaseStatus {
   PENDING
   COMPLETED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
   CANCELLED
 }
